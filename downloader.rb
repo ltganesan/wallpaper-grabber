@@ -3,6 +3,8 @@ require 'rubygems'
 require 'open-uri' # for url parsing
 require 'optparse' # for command line aoption parsing
 require 'net/http' # to get page source
+require 'net/https' # to get page source
+
 require 'json' # for parsing source for pics
 
 $subreddits = ['earthporn', 'waterporn','nature','wallpaper','aww'] # sub-reddits to download from
@@ -55,8 +57,8 @@ class DLoader
 		$subreddits.each do |subname|
 			url = url + subname + '+'
 		end
-		url = url[0..-2] + '/hot.json?limit=20'
-		p url
+		url = url[0..-2] + '/hot.json?limit=40' #default to "hot" and 30 posts
+#		p url
 
 		# get source of new url
 		source = getSource(url)
@@ -70,30 +72,51 @@ class DLoader
 		urls.reject! do |name, url|
 			is_picture?(url)
 		end
-		p urls
-
-#		url = 'http://farm1.static.flickr.com/92/218926700_ecedc5fef7_o.jpg'
-#		open(url){ |f|
-#			File.open('newimage.jpg','wb') do |file|
-#				file.puts f.read
-#			end
-#		}
+		
+		i = 0
+		urls.each_pair do |name, url|
+			puts name
+			puts url
+			# fix ssl error
+			if url[0..4].eql?('https')
+				url = 'http' + url[5..-1]
+			end
+			open(url){ |f|
+				i = i + 1
+				File.open("wp#{i}.jpg",'wb') do |file|
+					file.puts f.read
+				end
+			}
+		end
 	end
 	def getSource(url)
 			url_parsed = URI.parse(url)
 	  		req = Net::HTTP::Get.new(url_parsed.path)
-			
-			Net::HTTP.start(url_parsed.host, url_parsed.port) do |http|
-	    	http.request(req)
+			http = Net::HTTP.new(url_parsed.host, url_parsed.port)
+			http.use_ssl = true if url_parsed.scheme == 'https'
+			http.start do |h|
+	    		h.request(req)
 	  		end
+
 	end 
 	def is_picture?(file)
 		valid = true
-		valid = false if file =~ /^.+\.(?i)((bmp)|(gif)|(jpeg)|(jpg)|(png)|(tiff))$/
+		valid = false if file =~ /^.+\.(?i)((bmp)|(jpeg)|(jpg)|(png)|(tiff))$/
 		valid = true  if file =~ /^.+\.(?i)(php)/
 		valid
 	end	
 
+	# Follow redirects
+	def fetch(uri_str, limit = 10)
+ 		raise ArgumentError, 'HTTP redirect too deep' if limit == 0
+ 		response = Net::HTTP.get_response(URI.parse(uri_str))
+		case response
+ 		when Net::HTTPSuccess     then response
+		when Net::HTTPRedirection then fetch(response['location'], limit - 1)
+			else
+				response.error!
+ 	end
+end
 end
 
 dl = DLoader.new
